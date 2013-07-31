@@ -2,11 +2,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"runtime"
 	"time"
-	//"unsafe"
 )
 
 func dotp(v1, v2 []float64) float64 {
@@ -61,15 +59,19 @@ func initv(n int) []float64 {
 }
 
 func Help() {
-	fmt.Println("Ce programme calcule le produit scalaire de 2 vecteurs de taille N, et le répartie sur p goroutines.")
+	log.Println("Ce programme calcule le produit scalaire de 2 vecteurs de taille N, et le répartie sur p goroutines.")
 	flag.PrintDefaults()
 }
 
 func main() {
+	// Paramètre pour la parallélisation :
 	var N, nbgo, nbproc int = 1000, 10, 4
+	// Que faire tourner :
 	var NoRout, NoSingle bool = false, false
+	// Timer :
 	var t0, t1 time.Time
 
+	// Parsing de la ligne de commande :
 	flag.Usage = Help
 	flag.IntVar(&N, "N", 1000, "Taille des vecteurs.")
 	flag.IntVar(&nbgo, "n", 10, "Nombre de GoRoutine à utiliser.")
@@ -78,52 +80,56 @@ func main() {
 	flag.BoolVar(&NoSingle, "-single", false, "Fait le calcul avec une goroutine simple (channel non-bufferisé).")
 	flag.Parse()
 
+	// On vérifie que l'utilisateur n'ait pas donné un nombre de CPU plus grand que celui disponible :
 	nump := runtime.NumCPU()
 	if nbproc > nump {
-		fmt.Println("Set nbproc=", nbproc, " to nbproc=", nump, ".")
+		log.Println("Set nbproc=", nbproc, " to nbproc=", nump, ".")
 		nbproc = nump
 	}
 
-	var res float64 = 0.0
-	d := make(chan float64, nbgo)
+	// On dit à l'executable qu'il peut utiliser nbproc processeur :
+	runtime.GOMAXPROCS(nbproc)
 
+	// Création des variables nécessaire au calcul :
+	var res float64 = 0.0         // Résultat de l'opération
+	d := make(chan float64, nbgo) // Canal de communication
+
+	// Création des 2 vecteurs :
 	v1 := initv(N)
 	v2 := initv(N)
 
+	// Exécution de la méthode en linéaire :
 	if NoRout {
 		t0 = time.Now()
-		fmt.Println("Résultat seul : ", dotp(v1, v2))
+		log.Println("Résultat seul : ", dotp(v1, v2))
 		t1 = time.Now()
-		fmt.Println("Temps d'éxecution sur une routine simple : ", t1.Sub(t0))
+		log.Println("Temps d'éxecution sur une routine simple : ", t1.Sub(t0))
 	}
 
+	// Exécution sur une seul Go routine :
 	if NoSingle {
 		c := make(chan float64)
-		fmt.Println("Avec une goroutine :")
+		log.Println("Avec une goroutine :")
 		t0 = time.Now()
 		go pdotp(v1, v2, c)
 		t1 = time.Now()
 
-		fmt.Println("\tRésultat : ", <-c)
-		fmt.Println("Temps d'éxecution sur une goroutine seule : ", t1.Sub(t0))
+		log.Println("\tRésultat : ", <-c)
+		log.Println("Temps d'éxecution sur une goroutine seule : ", t1.Sub(t0))
 	}
 
-	fmt.Println("Avec ", nbgo, " goroutines :")
+	// Lancement des nbgo Go routine sur les nbproc processeurs :
+	log.Println("Avec ", nbgo, " goroutines :")
 	t0 = time.Now()
+	//	-> lancement :
 	for i := 0; i < nbgo; i++ {
-		//fmt.Println("Lancement de la goroutine n°=", i+1, " [", i*N/nbgo,":", (i+1)*N/nbgo, "]")
-
-		//fmt.Println(i, N, nbgo, N/nbgo, i+1, (i+1)*N/nbgo, len(v1), len(v2), int(^uint(0) >> 1) )
-		//fmt.Printf("%T %d %T (%d)\n", i, i, (i+1)*N/nbgo, unsafe.Sizeof(i))
-		//fmt.Printf("%T %T %T (%d)\n", i, N, nbgo, unsafe.Sizeof(i))
-
 		go pdotp(v1[i*N/nbgo:(i+1)*N/nbgo], v2[i*N/nbgo:(i+1)*N/nbgo], d)
 	}
-
+	//	-> récupération des résultats :
 	for i := 0; i < nbgo; i++ {
 		res += <-d
 	}
 	t1 = time.Now()
-	fmt.Println("\tRésultat : ", res)
-	fmt.Println("Temps d'éxecution avec ", nbgo, " goroutines : ", t1.Sub(t0))
+	log.Println("\tRésultat : ", res)
+	log.Println("Temps d'éxecution avec ", nbgo, " goroutines : ", t1.Sub(t0))
 }
